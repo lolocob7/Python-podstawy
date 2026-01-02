@@ -1,0 +1,8 @@
+{
+  "code": "EUC",
+  "name": "EUCO /20",
+  "isin": "PLERPCO00017",
+  "lotteryId": 93,
+  "currency": "PLN",
+  "quotes": { "date": "2026-01-02", "close": 1.4 }
+}
