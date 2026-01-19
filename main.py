@@ -7,10 +7,6 @@ import datetime
 import json as js
 import ssl
 
-# -----------------------------
-# 4. Wczytanie Twoich plików CSV (Format Polski)
-# -----------------------------
-# --- Setup Time Period ---
 end_date = datetime.date.today()
 start_date = end_date - datetime.timedelta(days=5 * 365)
 daty_full = pd.date_range(start=start_date, end=end_date, freq="D")
@@ -21,7 +17,7 @@ stock_files = [
     {"nazwa": "PURE", "symbol": "PUR"},
 ]
 
-notowania = {}
+stock_prices = {}
 print("Wczytuję Twoje pliki CSV...")
 
 for info in stock_files:
@@ -43,14 +39,11 @@ for info in stock_files:
         df["daty"] = pd.to_datetime(df[date_col], format="%Y-%m-%d")
         df.set_index("daty", inplace=True)
 
-        # -> Tworzymy czystą tabelę tylko z ceną zamknięcia
         df_clean = pd.DataFrame()
         df_clean["Close"] = df[price_col]
 
-        # -> Sortujemy datami (od 2021 do 2026), żeby wykres się nie pomieszał
         df_clean = df_clean.sort_index()
 
-        # -> Wyrównanie do 5 lat (1826 dni). Dzięki temu możemy łatwo dzielić przez kurs dolara.
         df_clean = df_clean.reindex(daty_full)
         df_clean["Close"] = (
             df_clean["Close"].interpolate(method="linear").ffill().bfill()
@@ -59,13 +52,19 @@ for info in stock_files:
         df_clean.reset_index(inplace=True)
         df_clean.rename(columns={"index": "daty"}, inplace=True)
 
-        # -> Zadanie (a): Zapis do JSON. Konwertujemy daty na tekst, bo JSON nie obsługuje obiektów datetime.
+        # DEBUG: Check data in range
+        rows_in_range = df_clean[df_clean["daty"].isin(daty_full)]
+        print(
+            f"DEBUG: {nazwa} rows matching date range: {len(rows_in_range)} / {len(daty_full)}"
+        )
+        print(f"DEBUG: {nazwa} head:\n{df_clean.head()}")
+
         nazwa_json = f"{info['symbol']}.json"
         df_json = df_clean.copy()
         df_json["daty"] = df_json["daty"].dt.strftime("%Y-%m-%d")
         df_json.to_json(nazwa_json, orient="records", force_ascii=False)
 
-        notowania[nazwa] = df_clean
+        stock_prices[nazwa] = df_clean
         print(f"-> {nazwa}: Wczytano poprawnie ({len(df_clean)} dni).")
 
     except Exception as e:
@@ -144,109 +143,66 @@ if not df_gold.empty:
     df_gold.sort_index(inplace=True)
 
 
-# --- Fetch Security Data & Populate Main DataFrame ---
-rows_list = []
+# --- Prepare Historical Data for Plotting ---
 
-for nazwa, df_stock in notowania.items():
+# Align USD and Gold data to the full date range for daily conversion
+# We use forward fill to handle weekends/holidays
+if not df_usd.empty:
+    print(f"DEBUG: USD data loaded. Rows: {len(df_usd)}")
+    print(f"DEBUG: USD head:\n{df_usd.head()}")
+    usd_series = df_usd["mid"].reindex(daty_full).ffill().bfill()
+else:
+    print("Warning: USD data empty, using 1.0 as rate")
+    usd_series = pd.Series(1.0, index=daty_full)
+
+if not df_gold.empty:
+    print(f"DEBUG: Gold data loaded. Rows: {len(df_gold)}")
+    gold_series = df_gold["cena"].reindex(daty_full).ffill().bfill()
+else:
+    print("Warning: Gold data empty, using 1.0 as rate")
+    gold_series = pd.Series(1.0, index=daty_full)
+
+# --- Plotting: 3 Subplots (PLN, USD, Gold) ---
+fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
+
+# Set titles/labels for axes
+ax1.set_title("Cena w PLN")
+ax1.set_ylabel("Cena (PLN)")
+
+ax2.set_title("Cena w USD")
+ax2.set_ylabel("Cena (USD)")
+
+ax3.set_title("Cena w Złocie")
+ax3.set_ylabel("Cena (gramy złota)")
+
+for nazwa, df_stock in stock_prices.items():
     if df_stock.empty:
         continue
 
-    # Get the last row (most recent date)
-    last_row = df_stock.iloc[-1]
-    # 'daty' column is datetime64[ns]
-    last_date = last_row["daty"]
-    last_close = float(last_row["Close"])
+    # Ensure df_stock is indexed by date for alignment
+    if "daty" in df_stock.columns:
+        df_plot = df_stock.set_index("daty")
+    else:
+        df_plot = df_stock.copy()
+        # Fallback if daty is missing (should not happen based on logic)
 
-    # Lookup USD and Gold rates (nearest available date)
-    usd_val = np.nan
-    gold_val = np.nan
+    # Now prices_pln has DatetimeIndex
+    prices_pln = df_plot["Close"]
 
-    if not df_usd.empty:
-        idx_usd = df_usd.index.get_indexer([last_date], method="nearest")[0]
-        usd_val = float(df_usd.iloc[idx_usd]["mid"])
+    # Calculate prices in USD and Gold
+    # Both Series now share the same DatetimeIndex (daty_full)
+    prices_usd = prices_pln / usd_series
+    prices_gold = prices_pln / gold_series
 
-    if not df_gold.empty:
-        idx_gold = df_gold.index.get_indexer([last_date], method="nearest")[0]
-        gold_val = float(df_gold.iloc[idx_gold]["cena"])
+    # Plot on each subplot
+    ax1.plot(prices_pln.index, prices_pln, label=nazwa)
+    ax2.plot(prices_usd.index, prices_usd, label=nazwa)
+    ax3.plot(prices_gold.index, prices_gold, label=nazwa)
 
-    rows_list.append(
-        {
-            "code": nazwa,
-            "date": last_date.strftime("%Y-%m-%d"),
-            "close": last_close,
-            "usd_rate": usd_val,
-            "gold_rate": gold_val,
-        }
-    )
+# Add legends
+ax1.legend()
+ax2.legend()
+ax3.legend()
 
-# Create the main DataFrame
-data = pd.DataFrame(rows_list)
-
-# Calculate converted prices if data exists
-if not data.empty:
-    data["price_usd"] = data["close"] / data["usd_rate"]
-    data["price_gold"] = data["close"] / data["gold_rate"]
-    # Fill any NaNs if rates were missing
-    data.fillna(0, inplace=True)
-
-
-# --- Print conversions ---
-for index, item in data.iterrows():
-    print(f"{item['code']} ({item['date']})")
-    print(f"PLN: {item['close']:.4f}")
-    print(f"USD: {item['price_usd']:.4f}")
-    print(f"Złoto (g): {item['price_gold']:.6f}")
-    print("-" * 30)
-
-# --- Prepare chart data ---
-if not data.empty:
-    codes = data["code"].tolist()
-    prices_pln = data["close"].tolist()
-    prices_usd = data["price_usd"].tolist()
-    prices_gold = data["price_gold"].tolist()
-else:
-    codes, prices_pln, prices_usd, prices_gold = [], [], [], []
-
-
-# --- Chart 1: PLN ---
-plt.figure()
-plt.bar(codes, prices_pln)
-plt.title("Ceny akcji (PLN)")
-plt.xlabel("Papier wartościowy")
-plt.ylabel("Cena [PLN]")
-plt.grid(axis="y")
-plt.show()
-
-# --- Chart 2: USD ---
-plt.figure()
-plt.bar(codes, prices_usd)
-plt.title("Ceny akcji (USD)")
-plt.xlabel("Papier wartościowy")
-plt.ylabel("Cena [USD]")
-plt.grid(axis="y")
-plt.show()
-
-# --- Chart 3: Gold (grams) ---
-plt.figure()
-plt.bar(codes, prices_gold)
-plt.title("Ceny akcji (w gramach złota)")
-plt.xlabel("Papier wartościowy")
-plt.ylabel("Złoto [g]")
-plt.grid(axis="y")
-plt.show()
-
-# --- Optional: One combined comparison chart ---
-x = np.arange(len(codes))
-width = 0.25
-
-plt.figure()
-plt.bar(x - width, prices_pln, width, label="PLN")
-plt.bar(x, prices_usd, width, label="USD")
-plt.bar(x + width, prices_gold, width, label="Złoto (g)")
-plt.xticks(x, codes)
-plt.xlabel("Papier wartościowy")
-plt.ylabel("Wartość")
-plt.title("Porównanie cen akcji (PLN / USD / złoto)")
-plt.legend()
-plt.grid(axis="y")
+plt.tight_layout()
 plt.show()
