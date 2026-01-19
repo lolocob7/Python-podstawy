@@ -52,12 +52,7 @@ for info in stock_files:
         df_clean.reset_index(inplace=True)
         df_clean.rename(columns={"index": "daty"}, inplace=True)
 
-        # DEBUG: Check data in range
         rows_in_range = df_clean[df_clean["daty"].isin(daty_full)]
-        print(
-            f"DEBUG: {nazwa} rows matching date range: {len(rows_in_range)} / {len(daty_full)}"
-        )
-        print(f"DEBUG: {nazwa} head:\n{df_clean.head()}")
 
         nazwa_json = f"{info['symbol']}.json"
         df_json = df_clean.copy()
@@ -129,7 +124,6 @@ usd_history = get_usd_history(start_date, end_date)
 gold_history = get_gold_history(start_date, end_date)
 
 
-# --- Process NBP Data into DataFrames for lookup ---
 df_usd = pd.DataFrame(usd_history)
 if not df_usd.empty:
     df_usd["effectiveDate"] = pd.to_datetime(df_usd["effectiveDate"])
@@ -144,9 +138,6 @@ if not df_gold.empty:
 
 
 # --- Prepare Historical Data for Plotting ---
-
-# Align USD and Gold data to the full date range for daily conversion
-# We use forward fill to handle weekends/holidays
 if not df_usd.empty:
     print(f"DEBUG: USD data loaded. Rows: {len(df_usd)}")
     print(f"DEBUG: USD head:\n{df_usd.head()}")
@@ -165,7 +156,6 @@ else:
 # --- Plotting: 3 Subplots (PLN, USD, Gold) ---
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
 
-# Set titles/labels for axes
 ax1.set_title("Cena w PLN")
 ax1.set_ylabel("Cena (PLN)")
 
@@ -179,27 +169,20 @@ for nazwa, df_stock in stock_prices.items():
     if df_stock.empty:
         continue
 
-    # Ensure df_stock is indexed by date for alignment
     if "daty" in df_stock.columns:
         df_plot = df_stock.set_index("daty")
     else:
         df_plot = df_stock.copy()
-        # Fallback if daty is missing (should not happen based on logic)
 
-    # Now prices_pln has DatetimeIndex
     prices_pln = df_plot["Close"]
 
-    # Calculate prices in USD and Gold
-    # Both Series now share the same DatetimeIndex (daty_full)
     prices_usd = prices_pln / usd_series
     prices_gold = prices_pln / gold_series
 
-    # Plot on each subplot
     ax1.plot(prices_pln.index, prices_pln, label=nazwa)
     ax2.plot(prices_usd.index, prices_usd, label=nazwa)
     ax3.plot(prices_gold.index, prices_gold, label=nazwa)
 
-# Add legends
 ax1.legend()
 ax2.legend()
 ax3.legend()
