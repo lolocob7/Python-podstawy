@@ -1,6 +1,5 @@
 import os
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import urllib.request
 import datetime
@@ -139,15 +138,12 @@ if not df_gold.empty:
 
 # --- Prepare Historical Data for Plotting ---
 if not df_usd.empty:
-    print(f"DEBUG: USD data loaded. Rows: {len(df_usd)}")
-    print(f"DEBUG: USD head:\n{df_usd.head()}")
     usd_series = df_usd["mid"].reindex(daty_full).ffill().bfill()
 else:
     print("Warning: USD data empty, using 1.0 as rate")
     usd_series = pd.Series(1.0, index=daty_full)
 
 if not df_gold.empty:
-    print(f"DEBUG: Gold data loaded. Rows: {len(df_gold)}")
     gold_series = df_gold["cena"].reindex(daty_full).ffill().bfill()
 else:
     print("Warning: Gold data empty, using 1.0 as rate")
