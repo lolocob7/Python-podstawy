@@ -17,7 +17,6 @@ stock_files = [
 ]
 
 stock_prices = {}
-print("Wczytuję Twoje pliki CSV...")
 
 for info in stock_files:
     nazwa = info["nazwa"]
@@ -26,7 +25,7 @@ for info in stock_files:
 
     if not os.path.exists(plik):
         print(
-            f"BŁĄD: Nie ma pliku {plik}. Upewnij się, że jest w tym samym folderze co skrypt!"
+            f"ERROR: File {plik} not found. Make sure it is in the same folder as the script!"
         )
         continue
 
@@ -59,10 +58,10 @@ for info in stock_files:
         df_json.to_json(nazwa_json, orient="records", force_ascii=False)
 
         stock_prices[nazwa] = df_clean
-        print(f"-> {nazwa}: Wczytano poprawnie ({len(df_clean)} dni).")
+        print(f"-> {nazwa}: Loaded successfully ({len(df_clean)} days).")
 
     except Exception as e:
-        print(f"Błąd przetwarzania pliku {plik}: {e}")
+        print(f"Error processing file {plik}: {e}")
 
 end_date = datetime.date.today()
 start_date = end_date - datetime.timedelta(days=5 * 365)
